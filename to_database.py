@@ -7,13 +7,13 @@ import os
 
 config = configparser.ConfigParser()
 config.read('config.ini')
-user = config.get('MYSQL', 'USER')
+user = os.getenv('MYSQL_USER')
 try:
-    passwd = config.get('MYSQL', 'PASSWD')
+    passwd = os.getenv('MYSQL_PASSWORD')
 except:
     passwd = None
-host = config.get('MYSQL', 'HOST')
-database = config.get('MYSQL', 'DATABASE')
+host = os.getenv('MYSQL_ADDRESS')
+database = os.getenv('MYSQL_DB_NAME')
 
 
 languages = {}
@@ -52,7 +52,6 @@ else:
 
 Base = declarative_base()
 
-
 class Languages(Base):
     __tablename__ = 'languages'
 
@@ -69,8 +68,9 @@ session = Session()
 strings_table = Table('strings', Base.metadata,
     Column('id', Integer, primary_key=True),
     Column('name', Text),
-    Column('language', Text),
-    Column('value', Text),
+    *(
+        Column('value_{}'.format(lang), Text) for lang in languages.values()
+    )
 )
 
 inserted = []
@@ -79,7 +79,6 @@ try:
     strings_table.drop()
 except:
     pass
-
 strings_table.create()
 
 session.query(Languages).delete(synchronize_session='fetch')
@@ -89,6 +88,10 @@ lang_orms = [Languages(code=code, name=name) for name, code in languages.items()
 
 for lang, strings in new_str.items():
     for key, value in strings.items():
-        session.execute('''INSERT INTO strings (name, language, value) VALUES (:name, :lang, :val)''', {"name": key, "lang": lang, "val": value})
+        if key in inserted:
+            session.execute('''UPDATE strings SET value_{} = :val WHERE name = :name'''.format(lang), {"name": key, "val": value})
+        else:
+            session.execute('''INSERT INTO strings (name, value_{}) VALUES (:name, :val)'''.format(lang), {"name": key, "val": value})
+            inserted.append(key)
 
 session.commit()
